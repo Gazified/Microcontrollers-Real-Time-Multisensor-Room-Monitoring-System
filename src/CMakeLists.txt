@@ -1,0 +1,10 @@
+idf_component_register(SRCS "main.cpp"
+                            "rtos_objects.cpp"
+                            "system_state.cpp"
+                            "sensors.cpp"
+                            "display.cpp"
+                            "input.cpp"
+                            "alarm.cpp"
+                            "motion.cpp"
+                       INCLUDE_DIRS "." "../include"
+                       REQUIRES driver esp_timer freertos)
