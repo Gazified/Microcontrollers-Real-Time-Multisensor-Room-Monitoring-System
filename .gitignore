@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+build/
+*.pyc
+*.exe
+test_runner*
+.DS_Store
