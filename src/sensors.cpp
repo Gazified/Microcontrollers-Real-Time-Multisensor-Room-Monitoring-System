@@ -1,9 +1,15 @@
 #include "sensors.h"
 #include "rtos_objects.h"
 #include "driver/gpio.h"
-#include "driver/adc.h"
 #include "esp_timer.h"
 #include <stdio.h>
+
+#if __has_include("esp_adc/adc_oneshot.h")
+#include "esp_adc/adc_oneshot.h"
+static adc_oneshot_unit_handle_t s_adc1_handle = NULL;
+#elif __has_include("driver/adc.h")
+#include "driver/adc.h"
+#endif
 
 #if __has_include("esp_rom_sys.h")
 #include "esp_rom_sys.h"
@@ -25,8 +31,23 @@ void initSensors(void)
     gpio_config(&dht_conf);
 
     // Configure LDR on ADC1 Channel 6 (GPIO 34)
+#if __has_include("esp_adc/adc_oneshot.h")
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = ADC_UNIT_1,
+        .clk_src = (adc_oneshot_clk_src_t)0,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    adc_oneshot_new_unit(&init_config, &s_adc1_handle);
+
+    adc_oneshot_chan_cfg_t chan_config = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    adc_oneshot_config_channel(s_adc1_handle, ADC_CHANNEL_6, &chan_config);
+#elif __has_include("driver/adc.h")
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(ADC1_CHANNEL_6, ADC_ATTEN_DB_11);
+#endif
 }
 
 static int waitPinState(gpio_num_t pin, int expected_state, uint32_t timeout_us)
@@ -98,7 +119,14 @@ bool readDHT22(float *temperature, float *humidity)
 
 int readLDR(void)
 {
-    int raw = adc1_get_raw(ADC1_CHANNEL_6);
+    int raw = 0;
+#if __has_include("esp_adc/adc_oneshot.h")
+    if (s_adc1_handle != NULL) {
+        adc_oneshot_read(s_adc1_handle, ADC_CHANNEL_6, &raw);
+    }
+#elif __has_include("driver/adc.h")
+    raw = adc1_get_raw(ADC1_CHANNEL_6);
+#endif
     if (raw < 0) raw = 0;
     if (raw > 4095) raw = 4095;
     // Map 12-bit ADC raw (0 - 4095) to relative percentage 0 - 100%

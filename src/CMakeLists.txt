@@ -7,4 +7,4 @@ idf_component_register(SRCS "main.cpp"
                             "alarm.cpp"
                             "motion.cpp"
                        INCLUDE_DIRS "." "../include"
-                       REQUIRES driver esp_timer freertos)
+                       REQUIRES driver esp_timer freertos esp_adc)

@@ -4,4 +4,6 @@ build/
 *.pyc
 *.exe
 test_runner*
+sdkconfig.esp32dev
+sdkconfig.ci
 .DS_Store
