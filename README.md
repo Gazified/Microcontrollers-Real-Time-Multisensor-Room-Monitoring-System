@@ -1,9 +1,5 @@
 # Real-Time Multisensor Room Monitoring System
 
-**Course**: BCA152 Microcontrollers — Laboratory Activity No. 1  
-**Institution**: Mindanao State University - Iligan Institute of Technology (MSU-IIT), College of Computer Studies  
-**Author**: BCA152 Student  
-**Instructor / Collaborator**: Asst. Prof. Paul Rodolf P. Castor, M.Sc. (`paulrodolf.castor@g.msuiit.edu.ph`)  
 **Target Platform**: Espressif ESP32 (ESP-IDF v5+ / Native FreeRTOS)  
 **Simulation Environment**: Wokwi Embedded Simulator  
 
