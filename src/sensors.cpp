@@ -24,11 +24,12 @@ void initSensors(void)
     // Configure DHT22 data pin
     gpio_config_t dht_conf = {};
     dht_conf.intr_type = GPIO_INTR_DISABLE;
-    dht_conf.mode = GPIO_MODE_INPUT;
+    dht_conf.mode = GPIO_MODE_OUTPUT_OD;
     dht_conf.pin_bit_mask = (1ULL << DHT22_GPIO);
     dht_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     dht_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpio_config(&dht_conf);
+    gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
 
     // Configure LDR on ADC1 Channel 6 (GPIO 34)
 #if __has_include("esp_adc/adc_oneshot.h")
@@ -50,64 +51,104 @@ void initSensors(void)
 #endif
 }
 
-static int waitPinState(gpio_num_t pin, int expected_state, uint32_t timeout_us)
+static portMUX_TYPE s_dhtMux = portMUX_INITIALIZER_UNLOCKED;
+
+static esp_err_t awaitPinState(gpio_num_t pin, uint32_t timeout_us, int expected_state, uint32_t *duration)
 {
-    uint32_t elapsed = 0;
-    while (gpio_get_level(pin) != expected_state) {
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    for (uint32_t i = 0; i < timeout_us; i += 2) {
         delay_us(2);
-        elapsed += 2;
-        if (elapsed >= timeout_us) {
-            return -1;
+        if (gpio_get_level(pin) == expected_state) {
+            if (duration) *duration = i;
+            return ESP_OK;
         }
     }
-    return elapsed;
+    return ESP_ERR_TIMEOUT;
 }
 
 bool readDHT22(float *temperature, float *humidity)
 {
     uint8_t data[5] = {0, 0, 0, 0, 0};
+    uint32_t low_dur = 0;
+    uint32_t high_dur = 0;
 
-    // Step 1: Send Start Signal (Pull LOW for at least 2ms, then release HIGH)
-    gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)DHT22_GPIO, 0);
-    vTaskDelay(pdMS_TO_TICKS(20)); // Keep LOW for 20ms
-
+    gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
     gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
-    delay_us(30);
+    vTaskDelay(pdMS_TO_TICKS(50));
 
-    // Step 2: Switch to Input and wait for DHT22 response
-    gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_INPUT);
+    // Phase A: Pull LOW for 20ms
+    gpio_set_level((gpio_num_t)DHT22_GPIO, 0);
+    delay_us(20000);
+    gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
 
-    // DHT22 response: pulls LOW ~80us then HIGH ~80us
-    if (waitPinState((gpio_num_t)DHT22_GPIO, 0, 100) < 0) return false;
-    if (waitPinState((gpio_num_t)DHT22_GPIO, 1, 100) < 0) return false;
-    if (waitPinState((gpio_num_t)DHT22_GPIO, 0, 100) < 0) return false;
+    // Critical timing section (no task switching)
+    portENTER_CRITICAL(&s_dhtMux);
 
-    // Step 3: Read 40 bits (5 bytes)
+    // Phase B: Wait for DHT to pull LOW (within 50us)
+    if (awaitPinState((gpio_num_t)DHT22_GPIO, 50, 0, NULL) != ESP_OK) {
+        portEXIT_CRITICAL(&s_dhtMux);
+        gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+        gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+        return false;
+    }
+
+    // Phase C: Wait for DHT to release HIGH (within 95us)
+    if (awaitPinState((gpio_num_t)DHT22_GPIO, 95, 1, NULL) != ESP_OK) {
+        portEXIT_CRITICAL(&s_dhtMux);
+        gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+        gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+        return false;
+    }
+
+    // Phase D: Wait for DHT to pull LOW to start transmission (within 95us)
+    if (awaitPinState((gpio_num_t)DHT22_GPIO, 95, 0, NULL) != ESP_OK) {
+        portEXIT_CRITICAL(&s_dhtMux);
+        gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+        gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+        return false;
+    }
+
+    // Read 40 bits
     for (int i = 0; i < 40; i++) {
-        // Wait for bit start (LOW phase ~50us)
-        if (waitPinState((gpio_num_t)DHT22_GPIO, 1, 80) < 0) return false;
+        if (awaitPinState((gpio_num_t)DHT22_GPIO, 70, 1, &low_dur) != ESP_OK) {
+            portEXIT_CRITICAL(&s_dhtMux);
+            gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+            gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+            return false;
+        }
 
-        // Measure HIGH duration (~26-28us for 0, ~70us for 1)
-        int high_duration = waitPinState((gpio_num_t)DHT22_GPIO, 0, 100);
-        if (high_duration < 0) return false;
+        if (awaitPinState((gpio_num_t)DHT22_GPIO, 85, 0, &high_dur) != ESP_OK) {
+            portEXIT_CRITICAL(&s_dhtMux);
+            gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+            gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+            return false;
+        }
 
-        uint8_t byte_idx = i / 8;
-        data[byte_idx] <<= 1;
-        if (high_duration > 40) {
-            data[byte_idx] |= 1;
+        uint8_t b = i / 8;
+        uint8_t m = i % 8;
+        if (high_dur > low_dur) {
+            data[b] |= (1 << (7 - m));
         }
     }
 
-    // Step 4: Verify checksum
-    uint8_t checksum = data[0] + data[1] + data[2] + data[3];
+    portEXIT_CRITICAL(&s_dhtMux);
+
+    gpio_set_direction((gpio_num_t)DHT22_GPIO, GPIO_MODE_OUTPUT_OD);
+    gpio_set_level((gpio_num_t)DHT22_GPIO, 1);
+
+    // Reject all-zero dummy reading
+    if (data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 0 && data[4] == 0) {
+        return false;
+    }
+
+    // Checksum verification
+    uint8_t checksum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
     if (checksum != data[4]) {
         return false;
     }
 
-    // Calculate humidity and temperature
-    int raw_hum = (data[0] << 8) | data[1];
-    int raw_temp = ((data[2] & 0x7F) << 8) | data[3];
+    int16_t raw_hum = (int16_t)((data[0] << 8) | data[1]);
+    int16_t raw_temp = (int16_t)(((data[2] & 0x7F) << 8) | data[3]);
     if (data[2] & 0x80) {
         raw_temp = -raw_temp;
     }
