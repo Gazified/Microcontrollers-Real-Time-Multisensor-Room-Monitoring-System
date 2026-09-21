@@ -234,7 +234,7 @@ bca152-freertos-multisensor/
 │   ├── unity.c                # Unity test harness implementation
 │   └── test_main.cpp          # 13 automated unit tests for decision logic
 └── docs/
-    └── laboratory-report.md    # Comprehensive academic laboratory report
+    └── laboratory-report.pdf   # Academic laboratory report (PDF submission)
 ```
 
 ---
