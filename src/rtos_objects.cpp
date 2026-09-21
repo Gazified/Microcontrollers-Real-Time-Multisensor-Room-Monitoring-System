@@ -45,7 +45,7 @@ void initRtosObjects(void)
     // Default to active state upon startup
     xEventGroupSetBits(xSystemEvents, EVENT_ACTIVE);
 
-    // Create fan-out queues for SensorData (length 5 each)
-    xSensorQueueDisplay = xQueueCreate(5, sizeof(SensorData));
-    xSensorQueueAlarm = xQueueCreate(5, sizeof(SensorData));
+    // Create fan-out queues for SensorData (length 1 for xQueueOverwrite mailbox semantics)
+    xSensorQueueDisplay = xQueueCreate(1, sizeof(SensorData));
+    xSensorQueueAlarm = xQueueCreate(1, sizeof(SensorData));
 }

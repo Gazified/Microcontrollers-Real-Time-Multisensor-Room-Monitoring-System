@@ -227,9 +227,12 @@ static void oledDrawString(int x, int page, const char *str)
 
 static void oledFlush(void)
 {
-    oledWriteCommand(0x21); oledWriteCommand(0); oledWriteCommand(127); // Column 0..127
-    oledWriteCommand(0x22); oledWriteCommand(0); oledWriteCommand(7);   // Page 0..7
-    oledWriteData(s_buffer, sizeof(s_buffer));
+    for (uint8_t page = 0; page < 8; page++) {
+        oledWriteCommand(0xB0 + page); // Set page start address (0xB0..0xB7)
+        oledWriteCommand(0x00);        // Set lower column start address
+        oledWriteCommand(0x10);        // Set higher column start address
+        oledWriteData(&s_buffer[page * 128], 128);
+    }
 }
 
 void displayTask(void *pvParameters)
