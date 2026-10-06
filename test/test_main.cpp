@@ -3,6 +3,9 @@
 #include "display.h"
 #include "system_state.h"
 
+void setUp(void) {}
+void tearDown(void) {}
+
 // Category A: Temperature Alarm Logic (5 required tests)
 void test_alarm_below_lower_threshold(void)
 {

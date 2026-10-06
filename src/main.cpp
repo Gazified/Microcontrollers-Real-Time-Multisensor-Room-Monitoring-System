@@ -19,9 +19,8 @@ extern "C" void app_main(void)
 
     // Step 2: System Greeting
     safeSerialPrintf("=====================================================\n");
-    safeSerialPrintf(" BCA152 Real-Time Multisensor Room Monitoring System \n");
+    safeSerialPrintf(" Real-Time Multisensor Room Monitoring System \n");
     safeSerialPrintf(" ESP32 + ESP-IDF + FreeRTOS Concurrency Architecture \n");
-    safeSerialPrintf(" Student Implementation - MSU-IIT CCS                \n");
     safeSerialPrintf("=====================================================\n");
     safeSerialPrintf("[System] Initializing FreeRTOS Tasks...\n");
 

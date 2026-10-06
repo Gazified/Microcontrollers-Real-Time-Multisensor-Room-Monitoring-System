@@ -170,8 +170,12 @@ int readLDR(void)
 #endif
     if (raw < 0) raw = 0;
     if (raw > 4095) raw = 4095;
-    // Map 12-bit ADC raw (0 - 4095) to relative percentage 0 - 100%
-    int percentage = (raw * 100) / 4095;
+    // Wokwi's photoresistor output falls as illumination increases. Keeping
+    // the inversion after integer scaling preserves the 100% bright endpoint.
+    int percentage = 100 - ((raw * 100) / 4095);
+    if (percentage <= 0) percentage = 0;
+    if (percentage < 0) percentage = 0;
+    if (percentage > 100) percentage = 100;
     return percentage;
 }
 
